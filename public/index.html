@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Call</title>
+    <style>
+        /* Ẩn video local khi là admin */
+        .hide {
+            display: none;
+        }
+
+        /* Lật video user nếu cần */
+        .flip {
+            transform: scaleX(-1);
+            /* Đảm bảo video không bị cắt */
+            width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <video id="localVideo" autoplay muted playsinline></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.9.3/simplepeer.min.js"></script>
+    <script>
+        const socket = io();
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const isAdmin = new URLSearchParams(window.location.search).get('type') === 'admin';
+
+        // Ẩn video local nếu là admin
+        if (isAdmin) {
+            localVideo.classList.add('hide');
+        }
+
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                // Hiển thị video local
+                localVideo.srcObject = stream;
+
+                // Tham gia phòng
+                socket.emit('join-room', isAdmin ? 'admin' : 'user');
+
+                socket.on('user-connected', userId => {
+                    if (isAdmin) {
+                        // Admin xử lý kết nối với user
+                        const peer = new SimplePeer({
+                            initiator: true,
+                            stream: stream,
+                            trickle: false
+                        });
+
+                        peer.on('signal', data => {
+                            socket.emit('signal', { signal: data, to: userId });
+                        });
+
+                        peer.on('stream', remoteStream => {
+                            remoteVideo.srcObject = remoteStream;
+                        });
+
+                        socket.on('signal', data => {
+                            peer.signal(data.signal);
+                        });
+
+                        // Xử lý ngắt kết nối
+                        socket.on('user-disconnected', id => {
+                            if (peer) {
+                                peer.destroy();
+                                remoteVideo.srcObject = null; // Dừng phát video khi ngắt kết nối
+                            }
+                        });
+                    } else {
+                        // User xử lý kết nối với admin
+                        const peer = new SimplePeer({
+                            initiator: false,
+                            stream: stream,
+                            trickle: false
+                        });
+
+                        peer.on('signal', data => {
+                            socket.emit('signal', { signal: data, to: userId });
+                        });
+
+                        peer.on('stream', remoteStream => {
+                            // Lật video nếu là video của user
+                            remoteVideo.srcObject = remoteStream;
+                            remoteVideo.classList.add('flip');
+                        });
+
+                        socket.on('signal', data => {
+                            peer.signal(data.signal);
+                        });
+
+                        // Xử lý ngắt kết nối
+                        socket.on('user-disconnected', id => {
+                            if (peer) {
+                                peer.destroy();
+                                remoteVideo.srcObject = null; // Dừng phát video khi ngắt kết nối
+                            }
+                        });
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error accessing media devices:', error);
+                alert('Cannot access camera or microphone.');
+            });
+    </script>
+</body>
+</html>
