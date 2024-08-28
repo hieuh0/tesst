@@ -1,9 +1,15 @@
+const fs = require('fs');
+const https = require('https');
 const express = require('express');
-const http = require('http');
 const socketIO = require('socket.io');
 
+const options = {
+    key: fs.readFileSync('./server.key'),
+    cert: fs.readFileSync('./server.crt')
+};
+
 const app = express();
-const server = http.createServer(app); // Sử dụng HTTP thay vì HTTPS
+const server = https.createServer(options, app);
 const io = socketIO(server);
 
 app.use(express.static('public'));
@@ -16,13 +22,13 @@ io.on('connection', (socket) => {
     socket.on('join-room', (type) => {
         users[socket.id] = { type, socketId: socket.id };
         
-        // Tìm người dùng khác
+        // Find the other user
         const otherUser = Object.keys(users).find(id => id !== socket.id);
 
         if (otherUser) {
-            // Thông báo cho người dùng khác về kết nối mới
+            // Notify the other user about the new connection
             io.to(otherUser).emit('user-connected', socket.id);
-            io.to(socket.id).emit('user-connected', otherUser); // Thông báo cho người dùng mới
+            io.to(socket.id).emit('user-connected', otherUser); // Notify the new user
         }
     });
 
